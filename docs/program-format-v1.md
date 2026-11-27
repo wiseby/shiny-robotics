@@ -1,6 +1,6 @@
 # Shiny Robotics Program JSON — Version 1
 
-**Status:** Initial v1 specification  
+**Status:** v1 specification  
 **Format identifier:** `shiny-robotics`  
 **Version:** `1`
 
@@ -85,24 +85,35 @@ Each step is an object with an `op` string identifying the operation. Operation-
 
 Steps in a task execute in array order. The next step is started when the current step has completed. Operations that start continuous actuator behaviour, such as a motor direction command, complete when the command has been issued; the motor may continue running until a later stop or direction command.
 
-### Proposed initial motor operations
+### v1 operation set
 
-The following is the proposed minimal initial operation set. The exact supported operation registry and hardware limits must be kept consistent between the hub validator and firmware.
+The initial v1 operation set is:
 
 | Operation | Required properties | Meaning |
 | --- | --- | --- |
-| `motor.set_speed` | `motor`, `speed` | Set the speed of a logical motor. |
-| `motor.forward` | `motor` | Set a logical motor to its forward direction. |
-| `motor.backward` | `motor` | Set a logical motor to its backward direction. |
+| `motor.set_speed` | `motor`, `speed` | Set the configured speed of a logical motor. |
+| `motor.forward` | `motor` | Set a logical motor to forward at its configured speed. |
+| `motor.backward` | `motor` | Set a logical motor to backward at its configured speed. |
 | `motor.stop` | `motor` | Stop a logical motor. |
 | `wait` | `duration_ms` | Suspend the current execution context for a duration without blocking other contexts. |
 
-For the initial motor operations:
+For the motor operations:
 
 - `motor` is a non-negative integer logical motor identifier. It is not a GPIO pin number.
 - `speed` is an integer from 0 through 100 inclusive.
+- Each motor's configured speed is initially 0.
+- `motor.set_speed` updates the configured speed. If the motor is already running, the new speed takes effect immediately.
+- Setting speed to 0 stops the motor's drive output. Its configured speed becomes 0, so a later direction command will not make it move until a positive speed is set.
+- `motor.forward` and `motor.backward` select the direction and apply the motor's currently configured speed. They do not change that speed. If the configured speed is 0, the motor remains stopped.
+- `motor.stop` stops the motor's drive output but does not change its configured speed. A later direction command therefore resumes at the previously configured speed.
+- The exact electrical stop behaviour (for example, coasting or active braking) is hardware-specific and is not prescribed by the canonical program format.
+
+For `wait`:
+
 - `duration_ms` is a non-negative integer duration in milliseconds.
-- Direction and motor-to-pin mapping are handled by the hardware abstraction layer. The program does not contain pin assignments.
+- A zero-duration wait completes immediately.
+
+Direction and motor-to-pin mapping are handled by the hardware abstraction layer. The program does not contain pin assignments.
 
 The initial example uses motor identifiers `0` and `1`. The available identifiers depend on the robot configuration and must be checked by the relevant validator/runtime.
 
@@ -118,6 +129,21 @@ Example:
     { "op": "motor.stop", "motor": 0 }
   ]
 }
+```
+
+### Motor operation sequence
+
+The separate operations make speed and direction independently controllable. For example, a program can set a speed once, start the motor, change its speed while it is running, and then stop it:
+
+```json
+[
+  { "op": "motor.set_speed", "motor": 0, "speed": 40 },
+  { "op": "motor.forward", "motor": 0 },
+  { "op": "wait", "duration_ms": 1000 },
+  { "op": "motor.set_speed", "motor": 0, "speed": 75 },
+  { "op": "wait", "duration_ms": 1000 },
+  { "op": "motor.stop", "motor": 0 }
+]
 ```
 
 ## 6. Parallel execution
@@ -234,7 +260,7 @@ They may be added in a later format version when there is a concrete requirement
 
 ## 13. Complete illustrative example
 
-This example demonstrates concurrent tasks, sequential steps, a fork-and-join parallel operation and non-blocking waits. The operation set is limited to the proposed initial operations above.
+This example demonstrates concurrent tasks, sequential steps, a fork-and-join parallel operation and non-blocking waits. The operation set is limited to the v1 operations above.
 
 ```json
 {
